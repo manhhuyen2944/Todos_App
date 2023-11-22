@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
+using Org.BouncyCastle.Asn1.Ocsp;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -14,6 +15,7 @@ using Todos_App.ViewModel;
 
 namespace Todos_App.Controllers
 {
+    [Produces("application/json")]
     [Route("api/[controller]")]
     [ApiController]
     public class usersController : ControllerBase
@@ -76,39 +78,6 @@ namespace Todos_App.Controllers
             await _mailService.SendConfirmationEmail(request.Email, confirmationLink);
             return Ok("Đăng ký tài khoản thành công!");
         }
-        public static string ComputeHmacSHA512(string key, string input)
-        {
-            var hash = new StringBuilder();
-            byte[] keyBytes = Encoding.UTF8.GetBytes(key);
-            byte[] inputBytes = Encoding.UTF8.GetBytes(input);
-            using (HMACSHA512 hmac = new(keyBytes))
-            {
-                byte[] hashValue = hmac.ComputeHash(inputBytes);
-                foreach (var theByte in hashValue)
-                {
-                    hash.Append(theByte.ToString("x2"));
-                }
-            }
-
-            return hash.ToString();
-        }
-        public static string GenerateKey(int maxSize = 32)
-        {
-            char[] chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890".ToCharArray();
-            byte[] data = new byte[1];
-            using (RandomNumberGenerator crypto = RandomNumberGenerator.Create())
-            {
-                crypto.GetNonZeroBytes(data);
-                data = new byte[maxSize];
-                crypto.GetNonZeroBytes(data);
-            }
-            StringBuilder result = new(maxSize);
-            foreach (byte b in data)
-            {
-                result.Append(chars[b % chars.Length]);
-            }
-            return result.ToString();
-        }
         #endregion
         #region Sign-in
         [HttpPost("sign-in")]
@@ -136,7 +105,7 @@ namespace Todos_App.Controllers
             {
                 return BadRequest("Tài khoản chưa được xác minh Email!");
             }
-            if (user.Status == Users.Usersstatus.Lock)
+            if (user.Status == UserStatus.Lock)
             {
                 return BadRequest("Tài khoản đã bị khóa!");
             }
@@ -144,15 +113,15 @@ namespace Todos_App.Controllers
             // Cập nhật thời gian đăng nhập và lưu vào cơ sở dữ liệu
             user.LastSignInTime = DateTime.Now;
             await _context.SaveChangesAsync();
-           
+
             // Tạo token JWT
             var tokenString = GenerateToken(user.UserId);
             return Ok(new { Message = $"Xin chào, {user.FullName}!", Token = tokenString });
         }
         #endregion
-        #region Change-Password
+        #region Change my password
+        [HttpPut("change-password")]
         [Authorize]
-        [HttpPost("change-password")]
         public async Task<IActionResult> ChangePassword(UserChangePasswordRequest request)
         {
             // Lấy thông tin người dùng từ token JWT
@@ -194,7 +163,7 @@ namespace Todos_App.Controllers
         #endregion
         #region Confirm-email
         [HttpGet("confirm-email")]
-        public async Task<IActionResult> ConfirmEmail([FromQuery] Guid userId, [FromQuery] string token , [FromServices] IMemoryCache memoryCache)
+        public async Task<IActionResult> ConfirmEmail([FromQuery] Guid userId, [FromQuery] string token, [FromServices] IMemoryCache memoryCache)
         {
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
@@ -247,6 +216,266 @@ namespace Todos_App.Controllers
                 return Ok("Xác nhận email thành công!");
             }
         }
+        #endregion
+        #region Send recover password
+        [HttpPost("recover-password")]
+        public async Task<IActionResult> RecoverPassword([FromBody] UserRecoverPasswordRequest request, [FromServices] IMemoryCache cacheService)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            if (user == null)
+            {
+                return BadRequest("Email không tồn tại.");
+            }
+            var userId = user.UserId;
+            string resetToken = GenerateToken(userId);
+            string cacheKey = "reset_password_" + resetToken;
+
+            if (cacheService.TryGetValue(cacheKey, out DateTime expirationTime))
+            {
+                if (expirationTime > DateTime.Now)
+                {
+                    return BadRequest("Bạn đã yêu cầu đặt lại mật khẩu trước đó. Vui lòng kiểm tra email để tìm liên kết đặt lại mật khẩu.");
+                }
+                else
+                {
+                    string newToken = GenerateToken(userId);
+                    string newCacheKey = "reset_password_" + newToken;
+                    expirationTime = DateTime.Now.AddHours(1); // Cập nhật thời gian hết hạn với 1 giờ sau khi tạo token mới
+                    string newResetPasswordLink = "https://localhost:7174/api/users/reset-password/" + newToken;
+                    await _mailService.SendResetPasswordEmail(user.Email, newResetPasswordLink);
+
+                    // Cập nhật cache với token mới và thời gian hết hạn mới
+                    cacheService.Set(newCacheKey, expirationTime, TimeSpan.FromHours(1));
+
+                    // Xóa cacheKey cũ
+                    cacheService.Remove(cacheKey);
+
+                    return Ok("Vui lòng kiểm tra email của bạn để đặt lại mật khẩu.");
+                }
+            }
+            cacheService.Set(cacheKey, userId, TimeSpan.FromHours(1));
+            string resetPasswordLink = "https://localhost:7174/api/users/reset-password/" + resetToken;
+            await _mailService.SendResetPasswordEmail(user.Email, resetPasswordLink);
+            return Ok("Vui lòng kiểm tra email của bạn để đặt lại mật khẩu.");
+        }
+        #endregion
+        #region Reset password
+        [HttpPut("reset-password/{resetToken}")]
+        public async Task<IActionResult> ResetPassword(string resetToken, [FromBody] UserResetPasswordRequest request, [FromServices] IMemoryCache cacheService)
+        {
+            // Kiểm tra xem reset token có hợp lệ hay không
+            string cacheKey = "reset_password_" + resetToken;
+            if (!cacheService.TryGetValue(cacheKey, out Guid userId))
+            {
+                return BadRequest("Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
+            }
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                return BadRequest("Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
+            }
+
+            // Kiểm tra xem token đã hết hạn hay chưa
+            if (cacheService.Get(cacheKey) is DateTime expirationTime && expirationTime <= DateTime.Now)
+            {
+                return BadRequest("Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
+            }
+
+            string passwordHash = ComputeHmacSHA512(request.NewPassword, user.PasswordSalt);
+            user.PasswordHash = passwordHash;
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+            cacheService.Remove(cacheKey);
+
+            return Ok("Đổi mật khẩu thành công.");
+        }
+        #endregion
+        #region Get my profile
+        [HttpGet("me")]
+        [Authorize]
+        public async Task<IActionResult> GetCurrentUser()
+        {
+            var userIdString = HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdString, out Guid userId))
+            {
+                return BadRequest("Không tìm thấy thông tin người dùng hoặc giá trị không hợp lệ.");
+            }
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (user == null)
+            {
+                return NotFound("Không tìm thấy thông tin người dùng.");
+            }
+            var userInfo = new
+            {
+                FullName = user.FullName,
+                Email = user.Email,
+                AvatarUrl = user.AvatarUrl
+            };
+            return Ok(userInfo);
+        }
+        #endregion
+        #region Update my profile
+        [HttpPut("me")]
+        [Authorize]
+        public async Task<IActionResult> UpdateCurrentUser([FromBody] UpdateMyProfileRequest userUpdate)
+        {
+            var userIdString = HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdString, out Guid userId))
+            {
+                return BadRequest("Không tìm thấy thông tin người dùng hoặc giá trị không hợp lệ.");
+            }
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            if (user == null)
+            {
+                return NotFound("Không tìm thấy thông tin người dùng.");
+            }
+            user.FullName = userUpdate.FullName;
+            user.Email = userUpdate.Email;
+            user.AvatarUrl = userUpdate.AvatarUrl;
+            _context.SaveChanges();
+            return Ok("Thông tin người dùng đã được cập nhật thành công.");
+        }
+        #endregion
+        #region Get user listing
+        [HttpGet]
+        [ProducesResponseType(typeof(IEnumerable<UserModel>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAllAsnyc([FromQuery] UserFilterRequest userFilterRequest)
+        {
+            var users = await _context.Users
+                            .Where(u =>
+                                (string.IsNullOrEmpty(userFilterRequest.Keyword) || (!string.IsNullOrEmpty(userFilterRequest.Keyword) && (u.UserName.Contains(userFilterRequest.Keyword) || u.Email.Contains(userFilterRequest.Keyword)))) &&
+                                (!userFilterRequest.Type.HasValue || (userFilterRequest.Type.HasValue && u.Type == userFilterRequest.Type.Value)) &&
+                                (!userFilterRequest.Status.HasValue || (userFilterRequest.Status.HasValue && u.Status == userFilterRequest.Status.Value))
+                            ).ToListAsync();
+            return Ok(users.Select(u => new UserModel()
+            {
+                UserId = u.UserId,
+                UserName = u.UserName,
+                Email = u.Email,
+                Type = u.Type,
+                Status = u.Status
+            }));
+        }
+        #endregion
+        #region Create new user
+        [HttpPost("create")]
+        [Authorize]
+        public async Task<IActionResult> CreateUser([FromBody] UserCreateRequest userCreate)
+        {
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            var users = await _context.Users.FirstOrDefaultAsync(u => u.UserName == userCreate.UserName || u.Email == userCreate.Email);
+            if (users != null)
+            {
+                if (users.UserName == userCreate.UserName)
+                {
+                    return BadRequest("Tài khoản đã tồn tại.");
+                }
+                if (users.Email == userCreate.Email)
+                {
+                    return BadRequest("Email đã tồn tại.");
+                }
+            }
+            string passwordSalt = GenerateKey();
+            string passwordHash = ComputeHmacSHA512(userCreate.Password, passwordSalt);
+            var userId = Guid.NewGuid();
+            var newUser = new Users
+            {
+                UserId = userId,
+                UserName = userCreate.UserName,
+                FullName = userCreate.FullName,
+                Email = userCreate.Email,
+                AvatarUrl = userCreate.AvatarUrl,
+                PasswordHash = passwordHash,
+                PasswordSalt = passwordSalt,
+                ModifierId = userId,
+                LastSignInTime = DateTime.Now,
+                ModfiedTime = DateTime.Now,
+                Type = Enum.Parse<UserType>(userCreate.Type.ToString()),
+            };
+            // Thêm người dùng mới vào cơ sở dữ liệu
+            _context.Users.Add(newUser);
+            _context.SaveChanges();
+            string token = GenerateToken(userId);
+            string confirmationLink = "https://localhost:7174/api/users/confirm-email?userId=" + userId + "&token=" + token;
+            await _mailService.SendConfirmationEmail(userCreate.Email, confirmationLink);
+            return Ok("Người dùng đã được tạo thành công.");
+        }
+        #endregion
+        #region Update exist user
+        [HttpPut("update/{userId:guid}")]
+        // [Authorize]
+        public async Task<IActionResult> UpdateUser(Guid userId, [FromBody] UserUpdateRequest userUpdate)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                return NotFound("Người dùng không tồn tại.");
+            }
+
+            if (user.Email != userUpdate.Email)
+            {
+                var existingUserWithEmail = await _context.Users.FirstOrDefaultAsync(u => u.Email == userUpdate.Email);
+                if (existingUserWithEmail != null)
+                {
+                    return BadRequest("Email đã tồn tại.");
+                }
+            }
+
+            user.FullName = userUpdate.FullName;
+            user.Email = userUpdate.Email;
+            user.AvatarUrl = userUpdate.AvatarUrl;
+            user.Type = Enum.Parse<UserType>(userUpdate.Type.ToString());
+
+            await _context.SaveChangesAsync();
+
+            return Ok("Người dùng đã được cập nhật thành công.");
+        }
+        #endregion
+        public static string ComputeHmacSHA512(string key, string input)
+        {
+            var hash = new StringBuilder();
+            byte[] keyBytes = Encoding.UTF8.GetBytes(key);
+            byte[] inputBytes = Encoding.UTF8.GetBytes(input);
+            using (HMACSHA512 hmac = new(keyBytes))
+            {
+                byte[] hashValue = hmac.ComputeHash(inputBytes);
+                foreach (var theByte in hashValue)
+                {
+                    hash.Append(theByte.ToString("x2"));
+                }
+            }
+
+            return hash.ToString();
+        }
+        public static string GenerateKey(int maxSize = 32)
+        {
+            char[] chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890".ToCharArray();
+            byte[] data = new byte[1];
+            using (RandomNumberGenerator crypto = RandomNumberGenerator.Create())
+            {
+                crypto.GetNonZeroBytes(data);
+                data = new byte[maxSize];
+                crypto.GetNonZeroBytes(data);
+            }
+            StringBuilder result = new(maxSize);
+            foreach (byte b in data)
+            {
+                result.Append(chars[b % chars.Length]);
+            }
+            return result.ToString();
+        }
         private string GenerateToken(Guid userId)
         {
             TokenSettings tokenSettings = _configuration.GetSection("TokenSettings").Get<TokenSettings>();
@@ -271,7 +500,7 @@ namespace Todos_App.Controllers
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-      
+
         private bool VerifyToken(Guid userId, string token)
         {
             TokenSettings tokenSettings = _configuration.GetSection("TokenSettings").Get<TokenSettings>();
@@ -309,86 +538,5 @@ namespace Todos_App.Controllers
             }
             return false;
         }
-        #endregion
-        #region Recover-Password
-        [HttpPost("recover-password")]
-        public async Task<IActionResult> RecoverPassword([FromBody] UserRecoverPasswordRequest request, [FromServices] IMemoryCache cacheService)
-        {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
-
-            if (user == null)
-            {
-                return BadRequest("Email không tồn tại.");
-            }
-
-            var userId = user.UserId;
-            string resetToken = GenerateToken(userId);
-            string cacheKey = "reset_password_" + resetToken;
-
-            if (cacheService.TryGetValue(cacheKey, out DateTime expirationTime))
-            {
-                if (expirationTime > DateTime.Now)
-                {
-                    return BadRequest("Bạn đã yêu cầu đặt lại mật khẩu trước đó. Vui lòng kiểm tra email để tìm liên kết đặt lại mật khẩu.");
-                }
-                else
-                {
-                    string newToken = GenerateToken(userId);
-                    string newCacheKey = "reset_password_" + newToken;
-                    expirationTime = DateTime.Now.AddHours(1); // Cập nhật thời gian hết hạn với 1 giờ sau khi tạo token mới
-                    string newResetPasswordLink = "https://localhost:7174/api/users/reset-password/" + newToken;
-                    await _mailService.SendResetPasswordEmail(user.Email, newResetPasswordLink);
-
-                    // Cập nhật cache với token mới và thời gian hết hạn mới
-                    cacheService.Set(newCacheKey, expirationTime, TimeSpan.FromHours(1));
-
-                    // Xóa cacheKey cũ
-                    cacheService.Remove(cacheKey);
-
-                    return Ok("Vui lòng kiểm tra email của bạn để đặt lại mật khẩu.");
-                }
-            }
-            cacheService.Set(cacheKey, userId, TimeSpan.FromHours(1));
-            string resetPasswordLink = "https://localhost:7174/api/users/reset-password/" + resetToken;
-            await _mailService.SendResetPasswordEmail(user.Email, resetPasswordLink);
-            return Ok("Vui lòng kiểm tra email của bạn để đặt lại mật khẩu.");
-        }
-        #endregion
-        #region Reset-Password
-        [HttpPost("reset-password/{resetToken}")]
-        public async Task<IActionResult> ResetPassword(string resetToken, [FromBody] UserResetPasswordRequest request, [FromServices] IMemoryCache cacheService)
-        {
-            // Kiểm tra xem reset token có hợp lệ hay không
-            string cacheKey = "reset_password_" + resetToken;
-            if (!cacheService.TryGetValue(cacheKey, out Guid userId))
-            {
-                return BadRequest("Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
-            }
-
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null)
-            {
-                return BadRequest("Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
-            }
-
-            // Kiểm tra xem token đã hết hạn hay chưa
-            if (cacheService.Get(cacheKey) is DateTime expirationTime && expirationTime <= DateTime.Now)
-            {
-                return BadRequest("Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
-            }
-
-            string passwordHash = ComputeHmacSHA512(request.NewPassword, user.PasswordSalt);
-            user.PasswordHash = passwordHash;
-            _context.Users.Update(user);
-            await _context.SaveChangesAsync();
-            cacheService.Remove(cacheKey);
-
-            return Ok("Đổi mật khẩu thành công.");
-        }
-        #endregion
-        #region Reset-Password
-       // [HttpPost("reset-password/{resetToken}")]
-       
-        #endregion
     }
 }

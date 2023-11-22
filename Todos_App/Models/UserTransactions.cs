@@ -23,12 +23,7 @@ namespace Todos_App.Models
         [DisplayName("Thời gian hoàn thành")]
         public DateTime? CompletedTime { get; set; } = null;
         [Column(TypeName = "tinyint")]
-        public UserTransactiontype Type { get; set; }
-        public enum UserTransactiontype
-        {
-            TopUp = 0,
-            Subscription = 1,
-        }
+        public UserTransactionType Type { get; set; }
         [DisplayName("Tùy chọn 1")]
         [StringLength(255, ErrorMessage = "Không được quá {1} ký tự")]
         public string Option1 { get; set; }
@@ -36,6 +31,11 @@ namespace Todos_App.Models
         [MaxLength]
         public string Option2 { get; set; }
         [ForeignKey("UserId")]
-        public  Users Users { get; set; }
+        public Users Users { get; set; }
+    }
+    public enum UserTransactionType
+    {
+        TopUp = 0,
+        Subscription = 1,
     }
 }
