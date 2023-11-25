@@ -1,5 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.ComponentModel;
+﻿using Newtonsoft.Json;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Todos_App.Models
@@ -19,6 +19,7 @@ namespace Todos_App.Models
         public DateTime CreatedTime { get; set; }
         public DateTime? Modified { get; set; } = null;
         [ForeignKey("UserId")]
-        public  Users Users { get; set; }
+        [JsonProperty(ItemReferenceLoopHandling = ReferenceLoopHandling.Ignore)]
+        public virtual Users Users { get; set; }
     }
 }

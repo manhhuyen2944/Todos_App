@@ -1,6 +1,6 @@
 ﻿namespace Todos_App.ViewModel
 {
-    public class RecaptchaSettings
+    public class RecaptchaSettingsRequest
     {
         public string SiteKey { get; set; }
         public string SecretKey { get; set; }

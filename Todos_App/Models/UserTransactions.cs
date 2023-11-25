@@ -1,6 +1,8 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Newtonsoft.Json;
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Todos_App.Enum;
 
 namespace Todos_App.Models
 {
@@ -31,11 +33,7 @@ namespace Todos_App.Models
         [MaxLength]
         public string Option2 { get; set; }
         [ForeignKey("UserId")]
-        public Users Users { get; set; }
-    }
-    public enum UserTransactionType
-    {
-        TopUp = 0,
-        Subscription = 1,
+        [JsonProperty(ItemReferenceLoopHandling = ReferenceLoopHandling.Ignore)]
+        public virtual Users Users { get; set; }
     }
 }

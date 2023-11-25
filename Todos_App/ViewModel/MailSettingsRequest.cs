@@ -1,6 +1,6 @@
 ﻿namespace Todos_App.ViewModel
 {
-    public class MailSettings
+    public class MailSettingsRequest
     {
         public string Server { get; set; }
         public int Port { get; set; }

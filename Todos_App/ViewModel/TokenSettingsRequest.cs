@@ -1,6 +1,6 @@
 ﻿namespace Todos_App.ViewModel
 {
-    public class TokenSettings
+    public class TokenSettingsRequest
     {
         public string SecretKey { get; set; }
         public string Audience { get; set; }

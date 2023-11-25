@@ -1,10 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "ReUO47S5T0EwB40/s801mEXEA0RP5NPBSF1YOLYls11/zFwHDIujGvM52LaXii3lyMfO9TUHDvWJP05rp9VmiA==",
+  "dgSpecHash": "s2ZSO906HYW7c6azP7ZKTBC1I1K8QIM1SsAWFobCmhjYRaBhnpEVpCEZWgHnuY6E8uOZbcSZiq/E/B1YLQTIrQ==",
   "success": true,
   "projectFilePath": "D:\\Graduation\\Project\\Todos_App\\Todos_App\\Todos_App.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\huyen\\.nuget\\packages\\aspnetcore.recaptcha\\1.7.0\\aspnetcore.recaptcha.1.7.0.nupkg.sha512",
+    "C:\\Users\\huyen\\.nuget\\packages\\fluentvalidation\\11.5.1\\fluentvalidation.11.5.1.nupkg.sha512",
+    "C:\\Users\\huyen\\.nuget\\packages\\fluentvalidation.aspnetcore\\11.3.0\\fluentvalidation.aspnetcore.11.3.0.nupkg.sha512",
+    "C:\\Users\\huyen\\.nuget\\packages\\fluentvalidation.dependencyinjectionextensions\\11.5.1\\fluentvalidation.dependencyinjectionextensions.11.5.1.nupkg.sha512",
     "C:\\Users\\huyen\\.nuget\\packages\\humanizer\\2.14.1\\humanizer.2.14.1.nupkg.sha512",
     "C:\\Users\\huyen\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
     "C:\\Users\\huyen\\.nuget\\packages\\humanizer.core.af\\2.14.1\\humanizer.core.af.2.14.1.nupkg.sha512",

@@ -1,7 +1,7 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.ComponentModel;
+﻿using Newtonsoft.Json;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Newtonsoft.Json;
+using Todos_App.Enum;
 
 namespace Todos_App.Models
 {
@@ -44,29 +44,5 @@ namespace Todos_App.Models
         [JsonProperty(ItemReferenceLoopHandling = ReferenceLoopHandling.Ignore)]
         public virtual Users Modifier { get; set; }
 
-    }
-    public enum UserStatus
-    {
-        Lock = 0,
-        Active = 1
-    }
-    public enum UserType
-    {
-        Admin = 0,
-        User = 1,
-    }
-
-
-    public class UserModel
-    {
-        public Guid UserId { get; set; }
-
-        public string UserName { get; set; }
-
-        public string Email { get; set; }
-
-        public UserType Type { get; set; }
-
-        public UserStatus Status { get; set; }
     }
 }

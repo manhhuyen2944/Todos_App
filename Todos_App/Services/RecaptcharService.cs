@@ -6,10 +6,10 @@ namespace Todos_App.Services
 {
     public class RecaptcharService : IRecaptcharService
     {
-        private readonly RecaptchaSettings _recaptchaSettings;
+        private readonly RecaptchaSettingsRequest _recaptchaSettings;
         public RecaptcharService(IConfiguration configuration)
         {
-            _recaptchaSettings = configuration.Get<RecaptchaSettings>();
+            _recaptchaSettings = configuration.Get<RecaptchaSettingsRequest>();
         }
 
         public async Task<bool> VerifyRecaptchaAsync(string recaptchaToken, CancellationToken cancellationToken)
@@ -32,7 +32,7 @@ namespace Todos_App.Services
 
                 if (httpResponse.StatusCode == HttpStatusCode.OK)
                 {
-                    var data = JsonConvert.DeserializeObject<RecaptchaSettings>(await httpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+                    var data = JsonConvert.DeserializeObject<RecaptchaSettingsRequest>(await httpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
                     return data != null && data.Status && data.Score >= 0.5f;
                 }
             }
