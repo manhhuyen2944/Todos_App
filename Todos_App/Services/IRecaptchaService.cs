@@ -1,6 +1,6 @@
 ﻿namespace Todos_App.Services
 {
-    public interface IRecaptcharService
+    public interface IRecaptchaService
     {
         Task<bool> VerifyRecaptchaAsync(string recaptchaToken, CancellationToken cancellationToken);
     }

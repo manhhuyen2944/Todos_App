@@ -35,10 +35,15 @@ builder.Services.Configure<MailSettingsRequest>(builder.Configuration.GetSection
 builder.Services.AddScoped<IMailService, MailService>();
 // Recaptcha
 builder.Services.Configure<RecaptchaSettingsRequest>(builder.Configuration.GetSection("RecaptchaSettings"));
-builder.Services.Configure<RecaptchaSettingsRequest>(builder.Configuration.GetSection("AppSettings"));
-builder.Services.AddScoped<IRecaptcharService, RecaptcharService>();
+builder.Services.Configure<MailSettingsRequest>(builder.Configuration.GetSection("AppSettings"));
+builder.Services.AddScoped<IRecaptchaService, RecaptchaService>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
+builder.Services.AddStackExchangeRedisCache(redisOptions =>
+{
+    string redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+    redisOptions.Configuration = redisConnectionString;
+});
 //JWT
 builder.Services.Configure<TokenSettingsRequest>(builder.Configuration.GetSection("TokenSettings"));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

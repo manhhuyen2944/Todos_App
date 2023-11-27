@@ -1,15 +1,16 @@
 ﻿using Newtonsoft.Json;
 using System.Net;
+using Todos_App.Caching;
 using Todos_App.ViewModel;
 
 namespace Todos_App.Services
 {
-    public class RecaptcharService : IRecaptcharService
+    public class RecaptchaService : IRecaptchaService
     {
         private readonly RecaptchaSettingsRequest _recaptchaSettings;
-        public RecaptcharService(IConfiguration configuration)
+        public RecaptchaService(IConfiguration configuration)
         {
-            _recaptchaSettings = configuration.Get<RecaptchaSettingsRequest>();
+            _recaptchaSettings = configuration.GetOptions<RecaptchaSettingsRequest>();
         }
 
         public async Task<bool> VerifyRecaptchaAsync(string recaptchaToken, CancellationToken cancellationToken)
